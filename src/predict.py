@@ -14,7 +14,8 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
-from src.config import ALIASES, ELO_NEWCOMER, FIXTURES_URL, MODEL_PATH, ODDS_FIXTURES_URL
+from src.config import (ALIASES, ELO_NEWCOMER, FIXTURES_URL, MODEL_PATH, ODDS_API_URL,
+                        ODDS_FIXTURES_URL)
 from src.data import ODDS_SOURCES
 from src.features import odds_to_log_probs
 
@@ -71,19 +72,20 @@ def ask_for_fixture(team, known_teams):
     return (team, opp, None) if venue.startswith("h") else (opp, team, None)
 
 
-def fetch_upcoming_odds():
-    """This week's Premier League odds: {(home, away): (odds_h, odds_d, odds_a)}."""
+def fetch_football_data_odds():
+    """Source 1 (no key needed): this week's games from football-data.co.uk.
+    Returns {(home, away): (odds_h, odds_d, odds_a)}."""
     try:
         fixtures = pd.read_csv(ODDS_FIXTURES_URL, encoding="utf-8-sig")
     except Exception as e:
-        print(f"(Couldn't download upcoming odds: {e})")
+        print(f"(Couldn't download odds from football-data.co.uk: {e})")
         return {}
     fixtures = fixtures[fixtures["Div"] == "E0"]
     table = {}
     for _, row in fixtures.iterrows():
         odds = []
         for col in ["OddsH", "OddsD", "OddsA"]:
-            # use the same source priority as the training data: market average first
+            # same source priority as the training data: market average first
             value = next((row[c] for c in ODDS_SOURCES[col]
                           if c in fixtures.columns and pd.notna(row[c])), None)
             odds.append(value)
@@ -93,20 +95,58 @@ def fetch_upcoming_odds():
     return table
 
 
-def ask_for_odds(home, away):
-    """Let the user type odds in when none are published yet (or press Enter to skip)."""
-    text = input(f"Odds for {home} win / draw / {away} win (e.g. 2.10 3.40 3.60), "
-                 f"or press Enter to skip: ").strip()
-    if not text:
-        return None
+def fetch_odds_api_odds(api_key, known_teams):
+    """Source 2 (free key): upcoming games further ahead from The Odds API.
+    Averages each outcome across UK bookmakers, like the market average used in training.
+    Each call uses 1 request of the free 500/month."""
     try:
-        odds = tuple(float(x) for x in text.replace(",", " ").split())
-        if len(odds) == 3 and all(o > 1 for o in odds):
-            return odds
-    except ValueError:
-        pass
-    print("  Couldn't read those odds, so predicting without them.")
-    return None
+        resp = requests.get(ODDS_API_URL, timeout=15, params={
+            "apiKey": api_key, "regions": "uk", "markets": "h2h", "oddsFormat": "decimal"})
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"(Couldn't download odds from The Odds API: {e})")
+        return {}
+    remaining = resp.headers.get("x-requests-remaining")
+    if remaining is not None:
+        print(f"(The Odds API: {remaining} free requests left this month)")
+
+    table = {}
+    for event in resp.json():
+        home = resolve_team(event["home_team"], known_teams)
+        away = resolve_team(event["away_team"], known_teams)
+        if home is None or away is None:
+            print(f"  Warning: couldn't match '{event['home_team']}' or '{event['away_team']}'. "
+                  f"Add it to ALIASES in src/config.py.")
+            continue
+        prices = {"H": [], "D": [], "A": []}
+        for bookmaker in event.get("bookmakers", []):
+            for market in bookmaker.get("markets", []):
+                if market.get("key") != "h2h":
+                    continue
+                for outcome in market.get("outcomes", []):
+                    if outcome["name"] == event["home_team"]:
+                        prices["H"].append(outcome["price"])
+                    elif outcome["name"] == event["away_team"]:
+                        prices["A"].append(outcome["price"])
+                    elif outcome["name"] == "Draw":
+                        prices["D"].append(outcome["price"])
+        if all(prices.values()):
+            table[(home, away)] = tuple(sum(v) / len(v) for v in
+                                        (prices["H"], prices["D"], prices["A"]))
+    return table
+
+
+def find_odds(home, away, known_teams):
+    """Look for odds automatically. Returns (odds or None, where they came from)."""
+    odds = fetch_football_data_odds().get((home, away))
+    if odds:
+        return odds, "football-data.co.uk"
+    api_key = os.environ.get("ODDS_API_KEY")
+    if api_key:
+        odds = fetch_odds_api_odds(api_key, known_teams).get((home, away))
+        if odds:
+            return odds, "The Odds API"
+    return None, None
 
 
 def predict_match(bundle, home, away, odds=None):
@@ -137,11 +177,12 @@ def team_view(team, home, away, probs):
     }
 
 
-def report(view, home, away, kickoff=None, used="", odds=None):
+def report(view, home, away, kickoff=None, used="", odds=None, source=None):
     when = f" ({kickoff[:10]})" if kickoff else ""
     print(f"\nNext game: {home} vs {away}{when}")
-    print(f"  Model: {used}" + (f"  |  odds {odds[0]:.2f} / {odds[1]:.2f} / {odds[2]:.2f}"
-                                  if odds else ""))
+    print(f"  Model: {used}")
+    if odds:
+        print(f"  Odds:  {odds[0]:.2f} / {odds[1]:.2f} / {odds[2]:.2f}  (from {source})")
     print(f"  {view['team']} ({view['venue']}) vs {view['opponent']}")
     print(f"  Win:  {view['win']:.1%}")
     print(f"  Draw: {view['draw']:.1%}")
@@ -170,18 +211,18 @@ def main():
         except Exception as e:
             print(f"Couldn't fetch fixtures ({e}).")
     else:
-        print("(No API key found, so entering the fixture manually.)")
+        print("(No FOOTBALL_DATA_API_KEY found, so entering the fixture manually.)")
     if fixture is None:
         fixture = ask_for_fixture(team, teams)
 
     home, away, kickoff = fixture
-    odds = fetch_upcoming_odds().get((home, away))
+    odds, source = find_odds(home, away, teams)
     if odds is None:
-        print(f"No published odds yet for {home} vs {away} "
-              f"(they usually appear a few days before the match).")
-        odds = ask_for_odds(home, away)
+        tip = "" if os.environ.get("ODDS_API_KEY") else \
+            " Add a free ODDS_API_KEY to your .env file to find odds further ahead."
+        print(f"No odds published yet for {home} vs {away}, so using Elo only.{tip}")
     probs, used = predict_match(bundle, home, away, odds)
-    report(team_view(team, home, away, probs), home, away, kickoff, used, odds)
+    report(team_view(team, home, away, probs), home, away, kickoff, used, odds, source)
 
 
 if __name__ == "__main__":

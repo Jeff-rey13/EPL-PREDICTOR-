@@ -15,6 +15,7 @@ TEST_SEASONS = ["2425", "2526", "2627"]
 RESULTS_URL = "https://www.football-data.co.uk/mmz4281/{}/E0.csv"
 FIXTURES_URL = "https://api.football-data.org/v4/competitions/PL/matches"
 ODDS_FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"   # this week's games + odds
+ODDS_API_URL = "https://api.the-odds-api.com/v4/sports/soccer_epl/odds"  # games further ahead
 
 # ---------------------------------------------------------------- Model
 FOCUS_TEAM = "Man United"         # extra accuracy line printed for this team
