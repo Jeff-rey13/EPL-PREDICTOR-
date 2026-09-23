@@ -30,12 +30,16 @@ from src.players import PLAYER_FEATURES, SQUAD_FEATURES, XG_FEATURES, add_player
 
 RESULTS_DIR = ROOT / "results"
 
+# Matches played behind closed doors (COVID): home advantage almost disappeared
+NO_FANS_START, NO_FANS_END = "2020-06-01", "2021-05-31"
+
 ELO_FEATURES = ["HomeElo", "AwayElo", "EloDiff"]
 FORM_FEATURES = ["H_GF_form", "H_GA_form", "H_Pts_form",
                  "A_GF_form", "A_GA_form", "A_Pts_form"]
 ODDS_FEATURES = ["Mkt_pH", "Mkt_pA"]      # draw prob = 1 - these two, so not needed
 LOGODDS = {p: [f"{p}_lH", f"{p}_lD", f"{p}_lA"] for p in ["Mkt", "Pin", "Cls"]}
 MARKET_PROBS = [f"{p}_p{s}" for p in ["Mkt", "Pin", "Cls"] for s in "HDA"]
+ORIGINAL_FEATURES = ELO_FEATURES + FORM_FEATURES   # the model before odds were added
 ALL_FEATURES = ELO_FEATURES + FORM_FEATURES + PLAYER_FEATURES + MARKET_PROBS
 
 # The starting point every experiment is compared against (your config.py settings)
@@ -47,24 +51,27 @@ DEFAULTS = {
     "model": "logistic_regression",
     "train_from": None,        # e.g. "2223" = only train on 2022/23 onwards
     "market": "Mkt",           # which odds a "market" benchmark uses: Mkt, Pin or Cls
+    "drop_no_fans": False,     # True = leave out COVID no-crowd matches from training
 }
 
 # ---------------------------------------------------------------- Experiments
 # Each one changes a single setting from DEFAULTS.
 EXPERIMENTS = [
     {"name": "current_setup",       "description": "Your current config.py settings"},
+    {"name": "original_setup",      "description": "The original model: Elo + form, no odds",
+     "features": ORIGINAL_FEATURES},
 
     # Bookmaker odds: the benchmark to beat, and odds as model features
     {"name": "bookmakers",          "description": "Benchmark: bookmaker odds used directly, no model",
      "model": "market"},
     {"name": "plus_odds",           "description": "Current setup + bookmaker odds",
-     "features": FEATURES + ODDS_FEATURES},
+     "features": ORIGINAL_FEATURES + ODDS_FEATURES},
     {"name": "elo_plus_odds",       "description": "Elo + bookmaker odds, no form",
      "features": ELO_FEATURES + ODDS_FEATURES},
     {"name": "odds_only",           "description": "Bookmaker odds as the only features",
      "features": ODDS_FEATURES},
     {"name": "odds_plus_squad",     "description": "Current setup + odds + starting XI value",
-     "features": FEATURES + ODDS_FEATURES + SQUAD_FEATURES},
+     "features": ORIGINAL_FEATURES + ODDS_FEATURES + SQUAD_FEATURES},
 
     # Odds in log space (lets the model reproduce the bookmakers, then adjust)
     {"name": "logodds_only",        "description": "Log-odds only (market average)",
@@ -72,7 +79,7 @@ EXPERIMENTS = [
     {"name": "elo_plus_logodds",    "description": "Elo + log-odds (market average)",
      "features": ELO_FEATURES + LOGODDS["Mkt"]},
     {"name": "plus_logodds",        "description": "Current setup + log-odds (market average)",
-     "features": FEATURES + LOGODDS["Mkt"]},
+     "features": ORIGINAL_FEATURES + LOGODDS["Mkt"]},
 
     # Sharper odds: Pinnacle, and closing odds (set just before kickoff)
     {"name": "bookmakers_pinnacle", "description": "Benchmark: Pinnacle odds used directly",
@@ -83,6 +90,16 @@ EXPERIMENTS = [
      "features": ELO_FEATURES + LOGODDS["Pin"]},
     {"name": "elo_plus_cls_logodds", "description": "Elo + closing log-odds",
      "features": ELO_FEATURES + LOGODDS["Cls"]},
+
+    # Leave out the COVID no-crowd matches from training (home advantage vanished)
+    {"name": "current_setup_no_covid", "description": "Original setup, no-crowd matches removed",
+     "features": ORIGINAL_FEATURES, "drop_no_fans": True},
+    {"name": "logodds_only_no_covid", "description": "Log-odds only, no-crowd matches removed",
+     "features": LOGODDS["Mkt"], "drop_no_fans": True},
+    {"name": "elo_plus_logodds_no_covid", "description": "Elo + log-odds, no-crowd matches removed",
+     "features": ELO_FEATURES + LOGODDS["Mkt"], "drop_no_fans": True},
+    {"name": "elo_plus_cls_logodds_no_covid", "description": "Elo + closing log-odds, no-crowd removed",
+     "features": ELO_FEATURES + LOGODDS["Cls"], "drop_no_fans": True},
 
     # Same models with much weaker regularisation (C=100 instead of 1)
     {"name": "logodds_only_weakreg", "description": "Log-odds only, weak regularisation",
@@ -124,17 +141,17 @@ EXPERIMENTS = [
 
     # Player features (from Fantasy Premier League data)
     {"name": "plus_squad_value",    "description": "Add starting XI value (player quality)",
-     "features": FEATURES + SQUAD_FEATURES},
+     "features": ORIGINAL_FEATURES + SQUAD_FEATURES},
     {"name": "elo_plus_squad_value", "description": "Elo + starting XI value, no form",
      "features": ELO_FEATURES + SQUAD_FEATURES},
     # xG only exists from 2022/23, so these train on fewer seasons. The first one
     # tells us how much of any change is just from having less training data.
-    {"name": "current_setup_recent", "description": "Current setup, trained on 2022/23+ only",
-     "train_from": "2223"},
+    {"name": "current_setup_recent", "description": "Original setup, trained on 2022/23+ only",
+     "features": ORIGINAL_FEATURES, "train_from": "2223"},
     {"name": "plus_xg_form",        "description": "Add xG for/against form (2022/23+ training)",
-     "features": FEATURES + XG_FEATURES, "train_from": "2223"},
+     "features": ORIGINAL_FEATURES + XG_FEATURES, "train_from": "2223"},
     {"name": "plus_all_player",     "description": "Add XI value + xG form (2022/23+ training)",
-     "features": FEATURES + PLAYER_FEATURES, "train_from": "2223"},
+     "features": ORIGINAL_FEATURES + PLAYER_FEATURES, "train_from": "2223"},
 ]
 
 
@@ -162,6 +179,8 @@ def run_experiment(settings, featured):
     train = df[~df["Season"].isin(TEST_SEASONS)].dropna(subset=settings["features"])
     if settings["train_from"]:
         train = train[train["Season"] >= settings["train_from"]]
+    if settings["drop_no_fans"]:
+        train = train[~train["Date"].between(NO_FANS_START, NO_FANS_END)]
     # Every experiment is tested on exactly the same matches: ones with ALL features
     test = df[df["Season"].isin(TEST_SEASONS)].dropna(subset=ALL_FEATURES)
 

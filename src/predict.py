@@ -14,13 +14,18 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
-from src.config import ALIASES, ELO_NEWCOMER, FEATURES, FIXTURES_URL, MODEL_PATH
+from src.config import ALIASES, ELO_NEWCOMER, FIXTURES_URL, MODEL_PATH, ODDS_FIXTURES_URL
+from src.data import ODDS_SOURCES
+from src.features import odds_to_log_probs
 
 
 def load_bundle():
     if not MODEL_PATH.exists():
         sys.exit("No trained model found. Run this first:  python -m src.train")
-    return joblib.load(MODEL_PATH)
+    bundle = joblib.load(MODEL_PATH)
+    if "fallback_model" not in bundle:
+        sys.exit("Your saved model is from an older version. Run:  python -m src.train")
+    return bundle
 
 
 def resolve_team(name, known_teams):
@@ -66,15 +71,57 @@ def ask_for_fixture(team, known_teams):
     return (team, opp, None) if venue.startswith("h") else (opp, team, None)
 
 
-def predict_match(bundle, home, away):
-    """Returns {'H': p, 'D': p, 'A': p} for a single fixture."""
-    elo, form = bundle["elo"], bundle["form"]
+def fetch_upcoming_odds():
+    """This week's Premier League odds: {(home, away): (odds_h, odds_d, odds_a)}."""
+    try:
+        fixtures = pd.read_csv(ODDS_FIXTURES_URL, encoding="utf-8-sig")
+    except Exception as e:
+        print(f"(Couldn't download upcoming odds: {e})")
+        return {}
+    fixtures = fixtures[fixtures["Div"] == "E0"]
+    table = {}
+    for _, row in fixtures.iterrows():
+        odds = []
+        for col in ["OddsH", "OddsD", "OddsA"]:
+            # use the same source priority as the training data: market average first
+            value = next((row[c] for c in ODDS_SOURCES[col]
+                          if c in fixtures.columns and pd.notna(row[c])), None)
+            odds.append(value)
+        if None not in odds:
+            table[(str(row["HomeTeam"]).strip(), str(row["AwayTeam"]).strip())] = \
+                tuple(float(o) for o in odds)
+    return table
+
+
+def ask_for_odds(home, away):
+    """Let the user type odds in when none are published yet (or press Enter to skip)."""
+    text = input(f"Odds for {home} win / draw / {away} win (e.g. 2.10 3.40 3.60), "
+                 f"or press Enter to skip: ").strip()
+    if not text:
+        return None
+    try:
+        odds = tuple(float(x) for x in text.replace(",", " ").split())
+        if len(odds) == 3 and all(o > 1 for o in odds):
+            return odds
+    except ValueError:
+        pass
+    print("  Couldn't read those odds, so predicting without them.")
+    return None
+
+
+def predict_match(bundle, home, away, odds=None):
+    """Returns ({'H': p, 'D': p, 'A': p}, name of the model used)."""
+    elo = bundle["elo"]
     h_elo, a_elo = elo.get(home, ELO_NEWCOMER), elo.get(away, ELO_NEWCOMER)
-    h_form = form.get(home, (1.0, 1.5, 1.0))   # rough default for an unknown team
-    a_form = form.get(away, (1.0, 1.5, 1.0))
-    row = pd.DataFrame([[h_elo, a_elo, h_elo - a_elo, *h_form, *a_form]], columns=FEATURES)
-    model = bundle["model"]
-    return dict(zip(model.classes_, model.predict_proba(row)[0]))
+    elo_features = [h_elo, a_elo, h_elo - a_elo]
+    if odds:
+        row = pd.DataFrame([elo_features + odds_to_log_probs(*odds)],
+                           columns=bundle["features"])
+        model, used = bundle["model"], "Elo + bookmaker odds"
+    else:
+        row = pd.DataFrame([elo_features], columns=bundle["fallback_features"])
+        model, used = bundle["fallback_model"], "Elo only (no odds available)"
+    return dict(zip(model.classes_, model.predict_proba(row)[0])), used
 
 
 def team_view(team, home, away, probs):
@@ -90,9 +137,11 @@ def team_view(team, home, away, probs):
     }
 
 
-def report(view, home, away, kickoff=None):
+def report(view, home, away, kickoff=None, used="", odds=None):
     when = f" ({kickoff[:10]})" if kickoff else ""
     print(f"\nNext game: {home} vs {away}{when}")
+    print(f"  Model: {used}" + (f"  |  odds {odds[0]:.2f} / {odds[1]:.2f} / {odds[2]:.2f}"
+                                  if odds else ""))
     print(f"  {view['team']} ({view['venue']}) vs {view['opponent']}")
     print(f"  Win:  {view['win']:.1%}")
     print(f"  Draw: {view['draw']:.1%}")
@@ -103,7 +152,7 @@ def main():
     load_dotenv()   # reads FOOTBALL_DATA_API_KEY from the .env file, if there is one
     bundle = load_bundle()
     teams = bundle["teams"]
-    print(f"Model: {bundle['model_name']} (trained {bundle['trained_at'][:10]})")
+    print(f"Model trained {bundle['trained_at'][:10]}")
 
     user_input = sys.argv[1] if len(sys.argv) > 1 else input("Which team? ")
     team = resolve_team(user_input, teams)
@@ -126,8 +175,13 @@ def main():
         fixture = ask_for_fixture(team, teams)
 
     home, away, kickoff = fixture
-    probs = predict_match(bundle, home, away)
-    report(team_view(team, home, away, probs), home, away, kickoff)
+    odds = fetch_upcoming_odds().get((home, away))
+    if odds is None:
+        print(f"No published odds yet for {home} vs {away} "
+              f"(they usually appear a few days before the match).")
+        odds = ask_for_odds(home, away)
+    probs, used = predict_match(bundle, home, away, odds)
+    report(team_view(team, home, away, probs), home, away, kickoff, used, odds)
 
 
 if __name__ == "__main__":

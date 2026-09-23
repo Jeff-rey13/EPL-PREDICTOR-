@@ -6,6 +6,7 @@
 | cls_logodds_only_weakreg | Closing log-odds only, weak reg. | 1900 | 52.7% | 0.9915 | -0.0152 |
 | bookmakers | Benchmark: bookmaker odds used directly, no model | 0 | 52.0% | 0.9928 | -0.0139 |
 | bookmakers_pinnacle | Benchmark: Pinnacle odds used directly | 0 | 51.8% | 0.9936 | -0.0132 |
+| elo_plus_cls_logodds_no_covid | Elo + closing log-odds, no-crowd removed | 1428 | 52.9% | 0.9940 | -0.0128 |
 | elo_plus_logodds | Elo + log-odds (market average) | 1900 | 51.6% | 0.9947 | -0.0120 |
 | elo_plus_logodds_weakreg | Elo + log-odds, weak regularisation | 1900 | 51.4% | 0.9949 | -0.0118 |
 | logodds_only | Log-odds only (market average) | 1900 | 52.3% | 0.9953 | -0.0115 |
@@ -16,7 +17,10 @@
 | elo_plus_odds | Elo + bookmaker odds, no form | 1900 | 51.8% | 0.9960 | -0.0107 |
 | plus_odds | Current setup + bookmaker odds | 1892 | 51.3% | 0.9966 | -0.0102 |
 | odds_only | Bookmaker odds as the only features | 1900 | 52.0% | 0.9968 | -0.0099 |
+| logodds_only_no_covid | Log-odds only, no-crowd matches removed | 1428 | 52.0% | 0.9982 | -0.0085 |
+| elo_plus_logodds_no_covid | Elo + log-odds, no-crowd matches removed | 1428 | 51.3% | 0.9983 | -0.0084 |
 | odds_plus_squad | Current setup + odds + starting XI value | 1884 | 51.2% | 0.9993 | -0.0074 |
+| current_setup_no_covid | Current setup, no-crowd matches removed | 1422 | 51.0% | 1.0059 | -0.0008 |
 | logreg_simpler | Logistic regression, stronger regularisation | 1892 | 50.8% | 1.0065 | -0.0002 |
 | home_adv_90 | Bigger home advantage (90) | 1892 | 50.7% | 1.0067 | -0.0001 |
 | current_setup | Your current config.py settings | 1892 | 50.5% | 1.0067 | +0.0000 |

@@ -14,6 +14,7 @@ WARMUP_SEASON = "1819"            # Elo needs a season to settle; not used for t
 TEST_SEASONS = ["2425", "2526", "2627"]
 RESULTS_URL = "https://www.football-data.co.uk/mmz4281/{}/E0.csv"
 FIXTURES_URL = "https://api.football-data.org/v4/competitions/PL/matches"
+ODDS_FIXTURES_URL = "https://www.football-data.co.uk/fixtures.csv"   # this week's games + odds
 
 # ---------------------------------------------------------------- Model
 FOCUS_TEAM = "Man United"         # extra accuracy line printed for this team
@@ -23,9 +24,13 @@ ELO_HOME_ADV = 60                 # Elo points added for playing at home
 ELO_START = 1500                  # rating for teams in the first season
 ELO_NEWCOMER = 1450               # rating for newly promoted teams
 
-FEATURES = ["HomeElo", "AwayElo", "EloDiff",
-            "H_GF_form", "H_GA_form", "H_Pts_form",
-            "A_GF_form", "A_GA_form", "A_Pts_form"]
+ELO_FEATURES = ["HomeElo", "AwayElo", "EloDiff"]
+ODDS_LOG_FEATURES = ["Mkt_lH", "Mkt_lD", "Mkt_lA"]   # log of bookmaker probabilities
+
+# Main model: Elo + bookmaker log-odds (chosen from the experiments, see results/)
+FEATURES = ELO_FEATURES + ODDS_LOG_FEATURES
+# Fallback model: used when no odds are available yet for a fixture
+FALLBACK_FEATURES = ELO_FEATURES
 
 # ---------------------------------------------------------------- Team names
 # Nicknames and API names -> the names used in football-data.co.uk files

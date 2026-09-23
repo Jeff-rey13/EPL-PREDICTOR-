@@ -66,6 +66,12 @@ def current_form(long, n=FORM_WINDOW):
 ODDS_SETS = {"Mkt": "Odds", "Pin": "Pin", "Cls": "Cls"}   # feature prefix -> odds columns
 
 
+def odds_to_log_probs(odds_h, odds_d, odds_a):
+    """Same conversion as add_market_probs, for one fixture: odds -> [lH, lD, lA]."""
+    inv = np.array([1 / odds_h, 1 / odds_d, 1 / odds_a])
+    return list(np.log(inv / inv.sum()))   # feature prefix -> odds columns
+
+
 def add_market_probs(df):
     """Bookmaker odds -> probabilities, for each set of odds.
 

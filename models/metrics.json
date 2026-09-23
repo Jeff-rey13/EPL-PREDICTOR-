@@ -1,24 +1,28 @@
 {
-  "trained_at": "2026-09-23T14:37:28+00:00",
-  "train_matches": 1892,
-  "test_matches": 806,
+  "trained_at": "2026-09-23T15:20:28+00:00",
+  "train_matches": 1900,
+  "test_matches": 810,
   "test_seasons": [
     "2425",
     "2526",
     "2627"
   ],
-  "baseline_home_win_accuracy": 0.4119,
+  "baseline_home_win_accuracy": 0.4136,
   "models": {
-    "logistic_regression": {
-      "accuracy": 0.5025,
-      "log_loss": 1.0099,
-      "Man United_accuracy": 0.45
+    "main (Elo + odds)": {
+      "accuracy": 0.5099,
+      "log_loss": 0.9988,
+      "Man United_accuracy": 0.4321
     },
-    "gradient_boosting": {
-      "accuracy": 0.495,
-      "log_loss": 1.0171,
-      "Man United_accuracy": 0.4125
+    "fallback (Elo only)": {
+      "accuracy": 0.5012,
+      "log_loss": 1.0092,
+      "Man United_accuracy": 0.4074
+    },
+    "bookmakers (benchmark)": {
+      "accuracy": 0.5136,
+      "log_loss": 0.9966,
+      "Man United_accuracy": 0.4321
     }
-  },
-  "best_model": "logistic_regression"
+  }
 }
