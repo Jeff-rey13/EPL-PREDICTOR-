@@ -63,16 +63,26 @@ def current_form(long, n=FORM_WINDOW):
             for team, g in recent.groupby("Team")}
 
 
+ODDS_SETS = {"Mkt": "Odds", "Pin": "Pin", "Cls": "Cls"}   # feature prefix -> odds columns
+
+
 def add_market_probs(df):
-    """Bookmaker odds -> probabilities. 1/odds sums to slightly over 1 (the bookmaker's
-    margin), so we divide by the total to make the three probabilities add up to 1."""
-    if not all(c in df.columns for c in ["OddsH", "OddsD", "OddsA"]):
-        return df
-    inv = 1 / df[["OddsH", "OddsD", "OddsA"]]
-    total = inv.sum(axis=1)
-    df["Mkt_pH"] = inv["OddsH"] / total
-    df["Mkt_pD"] = inv["OddsD"] / total
-    df["Mkt_pA"] = inv["OddsA"] / total
+    """Bookmaker odds -> probabilities, for each set of odds.
+
+    1/odds adds up to slightly more than 1 (the bookmaker's margin), so we divide by
+    the total to make the three probabilities add up to exactly 1.
+    We also store log(probability): logistic regression works in log space, so these
+    let it reproduce the bookmakers' prediction exactly and then adjust it.
+    """
+    for prefix, src in ODDS_SETS.items():
+        cols = [f"{src}H", f"{src}D", f"{src}A"]
+        if not all(c in df.columns for c in cols):
+            continue
+        inv = 1 / df[cols]
+        total = inv.sum(axis=1)
+        for side, col in zip("HDA", cols):
+            df[f"{prefix}_p{side}"] = inv[col] / total
+            df[f"{prefix}_l{side}"] = np.log(df[f"{prefix}_p{side}"])
     return df
 
 

@@ -34,7 +34,9 @@ ELO_FEATURES = ["HomeElo", "AwayElo", "EloDiff"]
 FORM_FEATURES = ["H_GF_form", "H_GA_form", "H_Pts_form",
                  "A_GF_form", "A_GA_form", "A_Pts_form"]
 ODDS_FEATURES = ["Mkt_pH", "Mkt_pA"]      # draw prob = 1 - these two, so not needed
-ALL_FEATURES = ELO_FEATURES + FORM_FEATURES + PLAYER_FEATURES + ["Mkt_pH", "Mkt_pD", "Mkt_pA"]
+LOGODDS = {p: [f"{p}_lH", f"{p}_lD", f"{p}_lA"] for p in ["Mkt", "Pin", "Cls"]}
+MARKET_PROBS = [f"{p}_p{s}" for p in ["Mkt", "Pin", "Cls"] for s in "HDA"]
+ALL_FEATURES = ELO_FEATURES + FORM_FEATURES + PLAYER_FEATURES + MARKET_PROBS
 
 # The starting point every experiment is compared against (your config.py settings)
 DEFAULTS = {
@@ -44,6 +46,7 @@ DEFAULTS = {
     "features": FEATURES,
     "model": "logistic_regression",
     "train_from": None,        # e.g. "2223" = only train on 2022/23 onwards
+    "market": "Mkt",           # which odds a "market" benchmark uses: Mkt, Pin or Cls
 }
 
 # ---------------------------------------------------------------- Experiments
@@ -62,6 +65,36 @@ EXPERIMENTS = [
      "features": ODDS_FEATURES},
     {"name": "odds_plus_squad",     "description": "Current setup + odds + starting XI value",
      "features": FEATURES + ODDS_FEATURES + SQUAD_FEATURES},
+
+    # Odds in log space (lets the model reproduce the bookmakers, then adjust)
+    {"name": "logodds_only",        "description": "Log-odds only (market average)",
+     "features": LOGODDS["Mkt"]},
+    {"name": "elo_plus_logodds",    "description": "Elo + log-odds (market average)",
+     "features": ELO_FEATURES + LOGODDS["Mkt"]},
+    {"name": "plus_logodds",        "description": "Current setup + log-odds (market average)",
+     "features": FEATURES + LOGODDS["Mkt"]},
+
+    # Sharper odds: Pinnacle, and closing odds (set just before kickoff)
+    {"name": "bookmakers_pinnacle", "description": "Benchmark: Pinnacle odds used directly",
+     "model": "market", "market": "Pin"},
+    {"name": "bookmakers_closing",  "description": "Benchmark: closing odds used directly",
+     "model": "market", "market": "Cls"},
+    {"name": "elo_plus_pin_logodds", "description": "Elo + Pinnacle log-odds",
+     "features": ELO_FEATURES + LOGODDS["Pin"]},
+    {"name": "elo_plus_cls_logodds", "description": "Elo + closing log-odds",
+     "features": ELO_FEATURES + LOGODDS["Cls"]},
+
+    # Same models with much weaker regularisation (C=100 instead of 1)
+    {"name": "logodds_only_weakreg", "description": "Log-odds only, weak regularisation",
+     "features": LOGODDS["Mkt"], "model": "logistic_regression_c100"},
+    {"name": "elo_plus_logodds_weakreg", "description": "Elo + log-odds, weak regularisation",
+     "features": ELO_FEATURES + LOGODDS["Mkt"], "model": "logistic_regression_c100"},
+    {"name": "elo_plus_pin_logodds_weakreg", "description": "Elo + Pinnacle log-odds, weak reg.",
+     "features": ELO_FEATURES + LOGODDS["Pin"], "model": "logistic_regression_c100"},
+    {"name": "cls_logodds_only_weakreg", "description": "Closing log-odds only, weak reg.",
+     "features": LOGODDS["Cls"], "model": "logistic_regression_c100"},
+    {"name": "elo_plus_cls_logodds_weakreg", "description": "Elo + closing log-odds, weak reg.",
+     "features": ELO_FEATURES + LOGODDS["Cls"], "model": "logistic_regression_c100"},
 
     # Which features matter?
     {"name": "elo_only",            "description": "Elo ratings only, no form",
@@ -111,6 +144,9 @@ def make_model(name):
             StandardScaler(), LogisticRegression(max_iter=1000)),
         "logistic_regression_c0.1": lambda: make_pipeline(
             StandardScaler(), LogisticRegression(C=0.1, max_iter=1000)),
+        # Very weak regularisation: lets the model keep the bookmakers' sharp probabilities
+        "logistic_regression_c100": lambda: make_pipeline(
+            StandardScaler(), LogisticRegression(C=100, max_iter=5000)),
         "gradient_boosting": lambda: GradientBoostingClassifier(
             n_estimators=150, max_depth=2, learning_rate=0.05, random_state=42),
         "random_forest": lambda: RandomForestClassifier(
@@ -132,7 +168,8 @@ def run_experiment(settings, featured):
     if settings["model"] == "market":
         # No training: use the bookmakers' probabilities as the prediction
         classes = ["A", "D", "H"]
-        probs = test[["Mkt_pA", "Mkt_pD", "Mkt_pH"]].values
+        m = settings["market"]
+        probs = test[[f"{m}_pA", f"{m}_pD", f"{m}_pH"]].values
         preds = [classes[i] for i in probs.argmax(axis=1)]
     else:
         model = make_model(settings["model"])

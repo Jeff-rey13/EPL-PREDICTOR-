@@ -1,5 +1,22 @@
 | Experiment | What changed | Train matches | Accuracy | Log loss | vs current |
 |---|---|---|---|---|---|
+| bookmakers_closing | Benchmark: closing odds used directly | 0 | 52.6% | 0.9889 | -0.0179 |
+| elo_plus_cls_logodds | Elo + closing log-odds | 1900 | 52.2% | 0.9908 | -0.0159 |
+| elo_plus_cls_logodds_weakreg | Elo + closing log-odds, weak reg. | 1900 | 52.5% | 0.9910 | -0.0157 |
+| cls_logodds_only_weakreg | Closing log-odds only, weak reg. | 1900 | 52.7% | 0.9915 | -0.0152 |
+| bookmakers | Benchmark: bookmaker odds used directly, no model | 0 | 52.0% | 0.9928 | -0.0139 |
+| bookmakers_pinnacle | Benchmark: Pinnacle odds used directly | 0 | 51.8% | 0.9936 | -0.0132 |
+| elo_plus_logodds | Elo + log-odds (market average) | 1900 | 51.6% | 0.9947 | -0.0120 |
+| elo_plus_logodds_weakreg | Elo + log-odds, weak regularisation | 1900 | 51.4% | 0.9949 | -0.0118 |
+| logodds_only | Log-odds only (market average) | 1900 | 52.3% | 0.9953 | -0.0115 |
+| plus_logodds | Current setup + log-odds (market average) | 1892 | 51.0% | 0.9953 | -0.0114 |
+| elo_plus_pin_logodds | Elo + Pinnacle log-odds | 1900 | 51.8% | 0.9953 | -0.0114 |
+| logodds_only_weakreg | Log-odds only, weak regularisation | 1900 | 52.3% | 0.9955 | -0.0113 |
+| elo_plus_pin_logodds_weakreg | Elo + Pinnacle log-odds, weak reg. | 1900 | 52.1% | 0.9955 | -0.0112 |
+| elo_plus_odds | Elo + bookmaker odds, no form | 1900 | 51.8% | 0.9960 | -0.0107 |
+| plus_odds | Current setup + bookmaker odds | 1892 | 51.3% | 0.9966 | -0.0102 |
+| odds_only | Bookmaker odds as the only features | 1900 | 52.0% | 0.9968 | -0.0099 |
+| odds_plus_squad | Current setup + odds + starting XI value | 1884 | 51.2% | 0.9993 | -0.0074 |
 | logreg_simpler | Logistic regression, stronger regularisation | 1892 | 50.8% | 1.0065 | -0.0002 |
 | home_adv_90 | Bigger home advantage (90) | 1892 | 50.7% | 1.0067 | -0.0001 |
 | current_setup | Your current config.py settings | 1892 | 50.5% | 1.0067 | +0.0000 |

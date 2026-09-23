@@ -4,15 +4,20 @@ import pandas as pd
 from src.config import CURRENT_SEASON, DATA_DIR, RESULTS_URL, SEASONS
 
 COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]
-ODDS_COLUMNS = ["OddsH", "OddsD", "OddsA"]
-
-# Pre-match odds, best source first. Column names changed over the years:
-# Avg* = market average (2019/20+), BbAv* = market average (older), then single bookmakers.
+# Three sets of odds, best source first. Column names changed over the years.
+#   Odds*  pre-match market average (Avg = 2019/20+, BbAv = older), else single bookmakers
+#   Pin*   pre-match Pinnacle (a very sharp bookmaker), else Bet365
+#   Cls*   closing odds, just before kickoff (2019/20+): average, else Pinnacle, else Bet365
 ODDS_SOURCES = {
     "OddsH": ["AvgH", "BbAvH", "B365H", "PSH"],
     "OddsD": ["AvgD", "BbAvD", "B365D", "PSD"],
     "OddsA": ["AvgA", "BbAvA", "B365A", "PSA"],
+    "PinH": ["PSH", "B365H"], "PinD": ["PSD", "B365D"], "PinA": ["PSA", "B365A"],
+    "ClsH": ["AvgCH", "PSCH", "B365CH"],
+    "ClsD": ["AvgCD", "PSCD", "B365CD"],
+    "ClsA": ["AvgCA", "PSCA", "B365CA"],
 }
+ODDS_COLUMNS = list(ODDS_SOURCES)
 
 
 def extract_odds(df):
