@@ -5,7 +5,7 @@ import pandas as pd
 from src.config import ELO_HOME_ADV, ELO_K, ELO_NEWCOMER, ELO_START, FORM_WINDOW
 
 
-def add_elo(df):
+def add_elo(df, k=ELO_K, home_adv=ELO_HOME_ADV):
     """Stores each team's rating BEFORE the match, so there is no leakage."""
     elo = {}
     home_pre, away_pre = [], []
@@ -17,10 +17,10 @@ def add_elo(df):
         home_pre.append(h)
         away_pre.append(a)
 
-        expected_home = 1 / (1 + 10 ** ((a - (h + ELO_HOME_ADV)) / 400))
+        expected_home = 1 / (1 + 10 ** ((a - (h + home_adv)) / 400))
         actual_home = {"H": 1.0, "D": 0.5, "A": 0.0}[row.FTR]
         margin = np.log(abs(row.FTHG - row.FTAG) + 1) + 1   # bigger wins count more
-        delta = ELO_K * margin * (actual_home - expected_home)
+        delta = k * margin * (actual_home - expected_home)
         elo[row.HomeTeam] = h + delta
         elo[row.AwayTeam] = a - delta
 
@@ -63,7 +63,9 @@ def current_form(long, n=FORM_WINDOW):
             for team, g in recent.groupby("Team")}
 
 
-def build_features(df):
-    df, elo = add_elo(df)
-    df, long = add_form(df)
-    return df, elo, current_form(long)
+def build_features(df, form_window=FORM_WINDOW, elo_k=ELO_K, elo_home_adv=ELO_HOME_ADV):
+    """Settings default to config.py; the experiment runner passes other values."""
+    df = df.copy()
+    df, elo = add_elo(df, k=elo_k, home_adv=elo_home_adv)
+    df, long = add_form(df, n=form_window)
+    return df, elo, current_form(long, n=form_window)
