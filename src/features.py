@@ -63,9 +63,23 @@ def current_form(long, n=FORM_WINDOW):
             for team, g in recent.groupby("Team")}
 
 
+def add_market_probs(df):
+    """Bookmaker odds -> probabilities. 1/odds sums to slightly over 1 (the bookmaker's
+    margin), so we divide by the total to make the three probabilities add up to 1."""
+    if not all(c in df.columns for c in ["OddsH", "OddsD", "OddsA"]):
+        return df
+    inv = 1 / df[["OddsH", "OddsD", "OddsA"]]
+    total = inv.sum(axis=1)
+    df["Mkt_pH"] = inv["OddsH"] / total
+    df["Mkt_pD"] = inv["OddsD"] / total
+    df["Mkt_pA"] = inv["OddsA"] / total
+    return df
+
+
 def build_features(df, form_window=FORM_WINDOW, elo_k=ELO_K, elo_home_adv=ELO_HOME_ADV):
     """Settings default to config.py; the experiment runner passes other values."""
     df = df.copy()
     df, elo = add_elo(df, k=elo_k, home_adv=elo_home_adv)
     df, long = add_form(df, n=form_window)
+    df = add_market_probs(df)
     return df, elo, current_form(long, n=form_window)

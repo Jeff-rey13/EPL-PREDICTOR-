@@ -26,12 +26,15 @@ from src.config import (ELO_HOME_ADV, ELO_K, FEATURES, FORM_WINDOW, ROOT, TEST_S
                         WARMUP_SEASON)
 from src.data import load_data
 from src.features import build_features
+from src.players import PLAYER_FEATURES, SQUAD_FEATURES, XG_FEATURES, add_player_features
 
 RESULTS_DIR = ROOT / "results"
 
 ELO_FEATURES = ["HomeElo", "AwayElo", "EloDiff"]
 FORM_FEATURES = ["H_GF_form", "H_GA_form", "H_Pts_form",
                  "A_GF_form", "A_GA_form", "A_Pts_form"]
+ODDS_FEATURES = ["Mkt_pH", "Mkt_pA"]      # draw prob = 1 - these two, so not needed
+ALL_FEATURES = ELO_FEATURES + FORM_FEATURES + PLAYER_FEATURES + ["Mkt_pH", "Mkt_pD", "Mkt_pA"]
 
 # The starting point every experiment is compared against (your config.py settings)
 DEFAULTS = {
@@ -40,12 +43,25 @@ DEFAULTS = {
     "elo_home_adv": ELO_HOME_ADV,
     "features": FEATURES,
     "model": "logistic_regression",
+    "train_from": None,        # e.g. "2223" = only train on 2022/23 onwards
 }
 
 # ---------------------------------------------------------------- Experiments
 # Each one changes a single setting from DEFAULTS.
 EXPERIMENTS = [
     {"name": "current_setup",       "description": "Your current config.py settings"},
+
+    # Bookmaker odds: the benchmark to beat, and odds as model features
+    {"name": "bookmakers",          "description": "Benchmark: bookmaker odds used directly, no model",
+     "model": "market"},
+    {"name": "plus_odds",           "description": "Current setup + bookmaker odds",
+     "features": FEATURES + ODDS_FEATURES},
+    {"name": "elo_plus_odds",       "description": "Elo + bookmaker odds, no form",
+     "features": ELO_FEATURES + ODDS_FEATURES},
+    {"name": "odds_only",           "description": "Bookmaker odds as the only features",
+     "features": ODDS_FEATURES},
+    {"name": "odds_plus_squad",     "description": "Current setup + odds + starting XI value",
+     "features": FEATURES + ODDS_FEATURES + SQUAD_FEATURES},
 
     # Which features matter?
     {"name": "elo_only",            "description": "Elo ratings only, no form",
@@ -54,22 +70,16 @@ EXPERIMENTS = [
      "features": FORM_FEATURES},
 
     # How many recent games should count as "form"?
-    {"name": "form_window_3",
-        "description": "Form over last 3 games",  "form_window": 3},
-    {"name": "form_window_10",
-        "description": "Form over last 10 games", "form_window": 10},
+    {"name": "form_window_3",       "description": "Form over last 3 games",  "form_window": 3},
+    {"name": "form_window_10",      "description": "Form over last 10 games", "form_window": 10},
 
     # How fast should Elo ratings react to results?
-    {"name": "elo_k_10",
-        "description": "Slower-moving Elo (K=10)", "elo_k": 10},
-    {"name": "elo_k_30",
-        "description": "Faster-moving Elo (K=30)", "elo_k": 30},
+    {"name": "elo_k_10",            "description": "Slower-moving Elo (K=10)", "elo_k": 10},
+    {"name": "elo_k_30",            "description": "Faster-moving Elo (K=30)", "elo_k": 30},
 
     # How big is home advantage?
-    {"name": "home_adv_30",
-        "description": "Smaller home advantage (30)", "elo_home_adv": 30},
-    {"name": "home_adv_90",
-        "description": "Bigger home advantage (90)",  "elo_home_adv": 90},
+    {"name": "home_adv_30",         "description": "Smaller home advantage (30)", "elo_home_adv": 30},
+    {"name": "home_adv_90",         "description": "Bigger home advantage (90)",  "elo_home_adv": 90},
 
     # Which model type?
     {"name": "logreg_simpler",      "description": "Logistic regression, stronger regularisation",
@@ -78,6 +88,20 @@ EXPERIMENTS = [
      "model": "gradient_boosting"},
     {"name": "random_forest",       "description": "Random forest instead of logistic regression",
      "model": "random_forest"},
+
+    # Player features (from Fantasy Premier League data)
+    {"name": "plus_squad_value",    "description": "Add starting XI value (player quality)",
+     "features": FEATURES + SQUAD_FEATURES},
+    {"name": "elo_plus_squad_value", "description": "Elo + starting XI value, no form",
+     "features": ELO_FEATURES + SQUAD_FEATURES},
+    # xG only exists from 2022/23, so these train on fewer seasons. The first one
+    # tells us how much of any change is just from having less training data.
+    {"name": "current_setup_recent", "description": "Current setup, trained on 2022/23+ only",
+     "train_from": "2223"},
+    {"name": "plus_xg_form",        "description": "Add xG for/against form (2022/23+ training)",
+     "features": FEATURES + XG_FEATURES, "train_from": "2223"},
+    {"name": "plus_all_player",     "description": "Add XI value + xG form (2022/23+ training)",
+     "features": FEATURES + PLAYER_FEATURES, "train_from": "2223"},
 ]
 
 
@@ -97,21 +121,30 @@ def make_model(name):
 
 def run_experiment(settings, featured):
     """Train on older seasons, test on newer ones, return the scores."""
-    df = featured[(settings["form_window"], settings["elo_k"],
-                   settings["elo_home_adv"])]
-    df = df[df["Season"] != WARMUP_SEASON].dropna(
-        subset=ELO_FEATURES + FORM_FEATURES)
-    train = df[~df["Season"].isin(TEST_SEASONS)]
-    test = df[df["Season"].isin(TEST_SEASONS)]
+    df = featured[(settings["form_window"], settings["elo_k"], settings["elo_home_adv"])]
+    df = df[df["Season"] != WARMUP_SEASON]
+    train = df[~df["Season"].isin(TEST_SEASONS)].dropna(subset=settings["features"])
+    if settings["train_from"]:
+        train = train[train["Season"] >= settings["train_from"]]
+    # Every experiment is tested on exactly the same matches: ones with ALL features
+    test = df[df["Season"].isin(TEST_SEASONS)].dropna(subset=ALL_FEATURES)
 
-    model = make_model(settings["model"])
-    model.fit(train[settings["features"]], train["FTR"])
-    probs = model.predict_proba(test[settings["features"]])
-    preds = model.predict(test[settings["features"]])
+    if settings["model"] == "market":
+        # No training: use the bookmakers' probabilities as the prediction
+        classes = ["A", "D", "H"]
+        probs = test[["Mkt_pA", "Mkt_pD", "Mkt_pH"]].values
+        preds = [classes[i] for i in probs.argmax(axis=1)]
+    else:
+        model = make_model(settings["model"])
+        model.fit(train[settings["features"]], train["FTR"])
+        classes = model.classes_
+        probs = model.predict_proba(test[settings["features"]])
+        preds = model.predict(test[settings["features"]])
     return {
         "accuracy": accuracy_score(test["FTR"], preds),
-        "log_loss": log_loss(test["FTR"], probs, labels=model.classes_),
+        "log_loss": log_loss(test["FTR"], probs, labels=classes),
         "baseline": (test["FTR"] == "H").mean(),
+        "train_matches": 0 if settings["model"] == "market" else len(train),
         "test_matches": len(test),
     }
 
@@ -119,22 +152,25 @@ def run_experiment(settings, featured):
 def save_results(table, run_time):
     RESULTS_DIR.mkdir(exist_ok=True)
 
-    # Append to the full history, so you never lose old results
+    # Add to the full history, so you never lose old results
     history = RESULTS_DIR / "experiments.csv"
-    table.assign(run_time=run_time).to_csv(history, mode="a", index=False,
-                                           header=not history.exists())
+    new = table.assign(run_time=run_time)
+    if history.exists():
+        new = pd.concat([pd.read_csv(history), new], ignore_index=True)
+    new["train_matches"] = new["train_matches"].astype("Int64")   # 1892, not 1892.0
+    new.to_csv(history, index=False)
 
     # Markdown table for the README
-    lines = ["| Experiment | What changed | Accuracy | Log loss | vs current |",
-             "|---|---|---|---|---|"]
+    lines = ["| Experiment | What changed | Train matches | Accuracy | Log loss | vs current |",
+             "|---|---|---|---|---|---|"]
     for r in table.itertuples():
-        lines.append(f"| {r.name} | {r.description} | {r.accuracy:.1%} | "
+        lines.append(f"| {r.name} | {r.description} | {r.train_matches} | {r.accuracy:.1%} | "
                      f"{r.log_loss:.4f} | {r.vs_current:+.4f} |")
     (RESULTS_DIR / "latest.md").write_text("\n".join(lines) + "\n")
 
 
 def main():
-    raw = load_data()
+    raw = add_player_features(load_data())
     run_time = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     # Building features is the slow part, so build each combination only once
@@ -142,15 +178,13 @@ def main():
     rows = []
     for exp in EXPERIMENTS:
         settings = {**DEFAULTS, **exp}
-        key = (settings["form_window"], settings["elo_k"],
-               settings["elo_home_adv"])
+        key = (settings["form_window"], settings["elo_k"], settings["elo_home_adv"])
         if key not in featured:
             featured[key], _, _ = build_features(raw, form_window=key[0],
                                                  elo_k=key[1], elo_home_adv=key[2])
         print(f"Running {exp['name']}...")
         scores = run_experiment(settings, featured)
-        rows.append(
-            {"name": exp["name"], "description": exp["description"], **scores})
+        rows.append({"name": exp["name"], "description": exp["description"], **scores})
 
     table = pd.DataFrame(rows)
     current = table.loc[table["name"] == "current_setup", "log_loss"].iloc[0]
@@ -159,9 +193,8 @@ def main():
 
     print(f"\nTest seasons: {', '.join(TEST_SEASONS)} "
           f"({table['test_matches'].iloc[0]} matches)")
-    print(
-        f"Baseline (always predict home win): {table['baseline'].iloc[0]:.1%}\n")
-    print(table[["name", "accuracy", "log_loss", "vs_current"]].to_string(
+    print(f"Baseline (always predict home win): {table['baseline'].iloc[0]:.1%}\n")
+    print(table[["name", "train_matches", "accuracy", "log_loss", "vs_current"]].to_string(
         index=False, formatters={"accuracy": "{:.1%}".format,
                                  "log_loss": "{:.4f}".format,
                                  "vs_current": "{:+.4f}".format}))

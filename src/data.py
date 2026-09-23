@@ -4,6 +4,24 @@ import pandas as pd
 from src.config import CURRENT_SEASON, DATA_DIR, RESULTS_URL, SEASONS
 
 COLUMNS = ["Date", "HomeTeam", "AwayTeam", "FTHG", "FTAG", "FTR"]
+ODDS_COLUMNS = ["OddsH", "OddsD", "OddsA"]
+
+# Pre-match odds, best source first. Column names changed over the years:
+# Avg* = market average (2019/20+), BbAv* = market average (older), then single bookmakers.
+ODDS_SOURCES = {
+    "OddsH": ["AvgH", "BbAvH", "B365H", "PSH"],
+    "OddsD": ["AvgD", "BbAvD", "B365D", "PSD"],
+    "OddsA": ["AvgA", "BbAvA", "B365A", "PSA"],
+}
+
+
+def extract_odds(df):
+    """One clean set of odds columns, using the best source available in each row."""
+    out = df[COLUMNS].copy()
+    for col, sources in ODDS_SOURCES.items():
+        available = [c for c in sources if c in df.columns]
+        out[col] = df[available].bfill(axis=1).iloc[:, 0] if available else float("nan")
+    return out
 
 
 def download_season(season):
@@ -14,8 +32,10 @@ def get_season(season, refresh=False):
     """Use the saved copy if we have one; finished seasons never change."""
     path = DATA_DIR / f"E0_{season}.csv"
     if path.exists() and not refresh:
-        return pd.read_csv(path)
-    df = download_season(season)[COLUMNS].dropna(subset=["FTR"])
+        cached = pd.read_csv(path)
+        if all(c in cached.columns for c in ODDS_COLUMNS):   # old copies have no odds
+            return cached
+    df = extract_odds(download_season(season)).dropna(subset=["FTR"])
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     return df
