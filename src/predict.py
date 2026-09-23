@@ -44,11 +44,12 @@ def resolve_team(name, known_teams):
     return lookup[close[0]] if close else None
 
 
-def fetch_next_fixture(team, known_teams, api_key):
-    """Returns (home, away, kickoff_utc) for the team's next league game, or None."""
+def fetch_upcoming_fixtures(known_teams, api_key):
+    """All scheduled league games as [(home, away, kickoff_utc)], soonest first."""
     resp = requests.get(FIXTURES_URL, headers={"X-Auth-Token": api_key}, timeout=15)
     resp.raise_for_status()
     upcoming = [m for m in resp.json()["matches"] if m["status"] in ("SCHEDULED", "TIMED")]
+    fixtures = []
     for m in sorted(upcoming, key=lambda m: m["utcDate"]):
         home = resolve_team(m["homeTeam"]["name"], known_teams)
         away = resolve_team(m["awayTeam"]["name"], known_teams)
@@ -56,9 +57,14 @@ def fetch_next_fixture(team, known_teams, api_key):
             print(f"  Warning: couldn't match '{m['homeTeam']['name']}' or "
                   f"'{m['awayTeam']['name']}'. Add it to ALIASES in src/config.py.")
             continue
-        if team in (home, away):
-            return home, away, m["utcDate"]
-    return None
+        fixtures.append((home, away, m["utcDate"]))
+    return fixtures
+
+
+def fetch_next_fixture(team, known_teams, api_key):
+    """Returns (home, away, kickoff_utc) for the team's next league game, or None."""
+    return next((f for f in fetch_upcoming_fixtures(known_teams, api_key)
+                 if team in (f[0], f[1])), None)
 
 
 def ask_for_fixture(team, known_teams):

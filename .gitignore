@@ -11,3 +11,6 @@ data/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# Streamlit secrets (API keys) - NEVER upload
+.streamlit/secrets.toml
