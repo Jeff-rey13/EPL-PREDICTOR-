@@ -1,0 +1,13 @@
+# Virtual environment
+.venv/
+
+# Secrets - NEVER upload these
+.env
+
+# Downloaded data (anyone can re-download it by running training)
+data/
+
+# Python clutter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
